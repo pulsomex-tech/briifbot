@@ -90,7 +90,7 @@ async def _daily_tasks(bot: Bot) -> None:
         # Warn users whose trial ends tomorrow
         now = datetime.now(timezone.utc)
         for user in await get_trial_users():
-            trial_ends = user.get("trial_ends_at", "")
+            trial_ends = user.get("trial_end_date", "")
             if not trial_ends:
                 continue
             try:
@@ -113,7 +113,7 @@ async def _downgrade_expired_trials(bot: Bot) -> None:
 
         expired = await get_expired_trials()
         for user in expired:
-            await update_user(user["telegram_id"], {"subscription_status": "free"})
+            await update_user(user["telegram_id"], {"status": "free"})
             try:
                 await bot.send_message(
                     user["telegram_id"],

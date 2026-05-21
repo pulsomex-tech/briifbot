@@ -83,10 +83,9 @@ async def _on_activated(bot: Bot, payload: dict) -> None:
     paid_until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
 
     await update_user(telegram_id, {
-        "subscription_status": "paid",
+        "status": "paid",
         "paid_until": paid_until,
-        "is_active": True,
-        "alerts_paused": False,
+        "is_paused": False,
     })
 
     await handle_referral_conversion(bot, telegram_id)
@@ -117,7 +116,7 @@ async def _on_cancelled(bot: Bot, payload: dict) -> None:
     if not telegram_id:
         return
 
-    await update_user(telegram_id, {"subscription_status": "free"})
+    await update_user(telegram_id, {"status": "free"})
 
     try:
         await bot.send_message(

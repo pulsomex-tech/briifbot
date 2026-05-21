@@ -4,7 +4,7 @@ import logging
 from openai import AsyncOpenAI
 
 from config.settings import OPENAI_API_KEY
-from db.client import get_unprocessed_tools, mark_tool_processed, update_tool
+from db.client import get_unprocessed_tools, mark_tool_processed, update_tool, increment_daily_stat
 
 logger = logging.getLogger(__name__)
 _openai = AsyncOpenAI(api_key=OPENAI_API_KEY)
@@ -29,9 +29,11 @@ async def filter_tools() -> int:
         return 0
 
     processed = 0
+    valid = 0
     for tool in tools:
         try:
-            content = f"Title: {tool['title']}\nDescription: {(tool.get('description') or '')[:400]}"
+            name = tool.get("name") or tool.get("title", "")
+            content = f"Title: {name}\nDescription: {(tool.get('description') or '')[:400]}"
             response = await _openai.chat.completions.create(
                 model="gpt-4.1-mini",
                 messages=[
@@ -43,16 +45,20 @@ async def filter_tools() -> int:
                 temperature=0,
             )
             result = json.loads(response.choices[0].message.content)
+            is_valid = bool(result.get("is_tool", False))
             await update_tool(tool["id"], {
-                "is_tool": bool(result.get("is_tool", False)),
+                "is_valid": is_valid,
                 "categories": result.get("categories", []),
                 "tags": result.get("tags", []),
-                "is_processed": True,
             })
             processed += 1
+            if is_valid:
+                valid += 1
         except Exception as e:
             logger.error(f"filter_worker error on tool {tool.get('id')}: {e}")
             await mark_tool_processed(tool["id"])
 
-    logger.info(f"Filtered {processed} tools")
+    if valid:
+        await increment_daily_stat("tools_valid", valid)
+    logger.info(f"Filtered {processed} tools ({valid} valid)")
     return processed

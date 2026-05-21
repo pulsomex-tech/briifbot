@@ -107,7 +107,7 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
             await state.clear()
             profile = await get_user_profile(telegram_id)
             if profile:
-                status = user.get("subscription_status", "free").title()
+                status = user.get("status", "free").title()
                 await message.answer(
                     f"👋 Welcome back!\n\n*Status:* {status}\n\nUse /help to see all commands.",
                     parse_mode="Markdown",
@@ -297,8 +297,8 @@ async def cmd_profile(message: Message) -> None:
             await message.answer("Profile incomplete. Use /start to finish setup.")
             return
 
-        status = user.get("subscription_status", "free").title()
-        paused = user.get("alerts_paused", False)
+        status = user.get("status", "free").title()
+        paused = user.get("is_paused", False)
         await message.answer(
             f"👤 *Your Profile*\n\n"
             f"*Role:* {profile.get('role', '—')}\n"
@@ -320,7 +320,7 @@ async def cmd_profile(message: Message) -> None:
 async def cmd_upgrade(message: Message) -> None:
     try:
         user = await get_user(message.from_user.id)
-        if user and user.get("subscription_status") == "paid":
+        if user and user.get("status") == "paid":
             await message.answer("✅ You're already on Briifbot Pro. Enjoy your alerts!")
             return
 
@@ -346,7 +346,7 @@ async def cmd_upgrade(message: Message) -> None:
 @router.message(Command("pause"))
 async def cmd_pause(message: Message) -> None:
     try:
-        await update_user(message.from_user.id, {"alerts_paused": True})
+        await update_user(message.from_user.id, {"is_paused": True})
         await message.answer("⏸ Alerts paused. Use /resume to turn them back on.")
     except Exception as e:
         logger.error(f"cmd_pause({message.from_user.id}): {e}")
@@ -356,7 +356,7 @@ async def cmd_pause(message: Message) -> None:
 @router.message(Command("resume"))
 async def cmd_resume(message: Message) -> None:
     try:
-        await update_user(message.from_user.id, {"alerts_paused": False})
+        await update_user(message.from_user.id, {"is_paused": False})
         await message.answer("▶️ Alerts resumed! You'll receive alerts again.")
     except Exception as e:
         logger.error(f"cmd_resume({message.from_user.id}): {e}")
@@ -368,7 +368,7 @@ async def cmd_resume(message: Message) -> None:
 @router.message(Command("stop"))
 async def cmd_stop(message: Message) -> None:
     try:
-        await update_user(message.from_user.id, {"is_active": False, "alerts_paused": True})
+        await update_user(message.from_user.id, {"status": "churned", "is_paused": True})
         await message.answer(
             "👋 You've been unsubscribed from Briifbot.\n\n"
             "Use /start to come back anytime — your profile is saved."

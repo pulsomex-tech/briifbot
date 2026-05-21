@@ -34,13 +34,10 @@ async def _fetch_rss(session: aiohttp.ClientSession, feed: dict) -> list[dict]:
             if not url:
                 continue
             items.append({
-                "title": entry.get("title", "").strip(),
+                "name": entry.get("title", "").strip(),
                 "description": (entry.get("summary", "") or "")[:600],
-                "source_url": url,
+                "url": url,
                 "source": feed["name"],
-                "published_at": datetime.now(timezone.utc).isoformat(),
-                "is_processed": False,
-                "is_tool": None,
                 "categories": [],
                 "tags": [],
             })
@@ -69,13 +66,10 @@ async def _fetch_github_trending(session: aiohttp.ClientSession) -> list[dict]:
             if not any(kw in combined for kw in AI_KEYWORDS):
                 continue
             items.append({
-                "title": href,
+                "name": href,
                 "description": description[:600],
-                "source_url": url,
+                "url": url,
                 "source": "GitHub Trending",
-                "published_at": datetime.now(timezone.utc).isoformat(),
-                "is_processed": False,
-                "is_tool": None,
                 "categories": [],
                 "tags": [],
             })
@@ -120,13 +114,10 @@ async def _fetch_product_hunt(session: aiohttp.ClientSession) -> list[dict]:
             if not ai_topics & topics:
                 continue
             items.append({
-                "title": node.get("name", ""),
+                "name": node.get("name", ""),
                 "description": (node.get("tagline", "") or "")[:600],
-                "source_url": node.get("url", ""),
+                "url": node.get("url", ""),
                 "source": "Product Hunt",
-                "published_at": datetime.now(timezone.utc).isoformat(),
-                "is_processed": False,
-                "is_tool": None,
                 "categories": [],
                 "tags": [],
             })
@@ -141,7 +132,6 @@ async def ingest_all() -> int:
         tasks = [_fetch_rss(session, feed) for feed in RSS_FEEDS]
         tasks.append(_fetch_github_trending(session))
         tasks.append(_fetch_product_hunt(session))
-
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     all_items: list[dict] = []
@@ -151,7 +141,7 @@ async def ingest_all() -> int:
 
     seen_urls: set[str] = set()
     for item in all_items:
-        url = item.get("source_url", "").strip()
+        url = item.get("url", "").strip()
         if not url or url in seen_urls:
             continue
         seen_urls.add(url)
