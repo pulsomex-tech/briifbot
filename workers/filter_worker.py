@@ -22,6 +22,54 @@ Respond ONLY with a JSON object containing:
 Exclude: blog posts, tutorials, opinion pieces, job listings, funding news, or general tech news.\
 """
 
+# ── Competitor guard ──────────────────────────────────────────────────────────
+
+BRIIFBOT_COMPETITOR_CATEGORIES = {
+    "tool discovery",
+    "ai tool monitoring",
+    "tool tracking",
+    "tool alerts",
+    "newsletter aggregation",
+    "product launch monitoring",
+    "tech radar",
+    "ai newsletter",
+    "tool curation",
+    "launch tracker",
+    "producthunt alternative",
+    "saas discovery",
+}
+
+BRIIFBOT_COMPETITOR_KEYWORDS = [
+    "discover new tools",
+    "track new ai tools",
+    "ai tool alerts",
+    "tool launches",
+    "product hunt",
+    "new saas tools",
+    "tool recommendations",
+    "ai newsletter",
+    "tool monitoring",
+    "launch notifications",
+    "tool aggregator",
+    "ai radar",
+    "tool digest",
+    "stack discovery",
+    "tool finder",
+    "new tools alert",
+    "software discovery",
+]
+
+
+def is_briifbot_competitor(tool: dict, categories: list[str]) -> bool:
+    """True if the tool competes with or could replace Briifbot."""
+    assigned = {c.lower() for c in categories}
+    if assigned & BRIIFBOT_COMPETITOR_CATEGORIES:
+        return True
+    text = f"{tool.get('name', '')} {tool.get('description', '')}".lower()
+    return any(kw in text for kw in BRIIFBOT_COMPETITOR_KEYWORDS)
+
+
+# ── Main filter loop ──────────────────────────────────────────────────────────
 
 async def filter_tools() -> int:
     tools = await get_unprocessed_tools()
@@ -45,10 +93,17 @@ async def filter_tools() -> int:
                 temperature=0,
             )
             result = json.loads(response.choices[0].message.content)
+            categories = result.get("categories", [])
             is_valid = bool(result.get("is_tool", False))
+
+            # Competitor guard — runs after LLM classification
+            if is_valid and is_briifbot_competitor(tool, categories):
+                is_valid = False
+                logger.info(f"BLOCKED (competitor): {name} → {categories}")
+
             await update_tool(tool["id"], {
                 "is_valid": is_valid,
-                "categories": result.get("categories", []),
+                "categories": categories,
                 "tags": result.get("tags", []),
             })
             processed += 1
