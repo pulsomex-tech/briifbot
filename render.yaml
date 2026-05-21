@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: briifbot
+    runtime: python
+    repo: https://github.com/pulsomex-tech/briifbot
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: SUPABASE_URL
+        value: https://rwvoxeuptrxohotprxpv.supabase.co
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: INVITEMEMBER_WEBHOOK_SECRET
+        value: ""
+      - key: PRODUCT_HUNT_API_KEY
+        sync: false

@@ -9,7 +9,7 @@ SUPABASE_SERVICE_KEY: str = os.environ["SUPABASE_SERVICE_KEY"]
 OPENAI_API_KEY: str = os.environ["OPENAI_API_KEY"]
 STRIPE_SECRET_KEY: str = os.environ.get("STRIPE_SECRET_KEY", "")
 INVITEMEMBER_WEBHOOK_SECRET: str = os.environ.get("INVITEMEMBER_WEBHOOK_SECRET", "")
-WEBHOOK_PORT: int = int(os.environ.get("WEBHOOK_PORT", "8080"))
+WEBHOOK_PORT: int = int(os.environ.get("PORT") or os.environ.get("WEBHOOK_PORT", "8080"))
 PRODUCT_HUNT_API_KEY: str | None = os.environ.get("PRODUCT_HUNT_API_KEY")
 
 # Business rules
