@@ -5,7 +5,7 @@ from aiogram.exceptions import TelegramForbiddenError
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
+from db.fsm_storage import SupabaseStorage
 from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
@@ -470,6 +470,6 @@ async def create_bot() -> Bot:
 
 
 def create_dispatcher() -> Dispatcher:
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=SupabaseStorage())
     dp.include_router(router)
     return dp

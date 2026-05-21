@@ -190,12 +190,14 @@ async def upsert_user_profile(telegram_id: int, role: str, stack: str, categorie
     if not user:
         raise ValueError(f"User not found: {telegram_id}")
     stack_arr = [s.strip() for s in stack.split(",") if s.strip()] or [stack]
+    # Clear FSM state now that onboarding is complete; preserve field via upsert
     result = await db.table("user_profiles").upsert(
         {
             "user_id": user["id"],
             "work_type": role,
             "tech_stack": stack_arr,
             "categories": categories,
+            "raw_onboarding_response": None,
         },
         on_conflict="user_id",
     ).execute()
