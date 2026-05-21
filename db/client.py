@@ -364,9 +364,11 @@ async def update_tool_market_score(tool_id: str, score: int) -> None:
 
 async def get_trending_tools(limit: int = 7, days: int = 7) -> list[dict]:
     """Return top tools by market_score (or recency if column not yet migrated)."""
-    db = await get_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    # Tier 1: new schema with market_score
     try:
+        db = await get_client()
         result = (
             await db.table("tools")
             .select("id,name,description,url,categories,tags,market_score,source,detected_at")
@@ -379,12 +381,12 @@ async def get_trending_tools(limit: int = 7, days: int = 7) -> list[dict]:
         )
         if result.data:
             return result.data
-        # market_score column missing or all scores are 0 — fall through
     except Exception:
-        pass  # Column not migrated yet
+        pass
 
-    # Fallback: most recent valid tools regardless of market_score
+    # Tier 2: new column names (detected_at / is_valid), no market_score
     try:
+        db = await get_client()
         result = (
             await db.table("tools")
             .select("id,name,description,url,categories,tags,source,detected_at")
@@ -394,9 +396,32 @@ async def get_trending_tools(limit: int = 7, days: int = 7) -> list[dict]:
             .limit(limit)
             .execute()
         )
-        return result.data or []
+        if result.data:
+            return result.data
     except Exception as e:
-        logger.error(f"get_trending_tools fallback: {e}")
+        logger.warning(f"get_trending_tools tier-2 failed: {e}")
+
+    # Tier 3: original column names (published_at / is_tool) — schema not yet migrated
+    try:
+        db = await get_client()
+        result = (
+            await db.table("tools")
+            .select("id,title,description,source_url,categories,tags,source,published_at")
+            .eq("is_tool", True)
+            .gte("published_at", cutoff)
+            .order("published_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = result.data or []
+        # Normalise column names to what the bot expects
+        for row in rows:
+            row.setdefault("name", row.pop("title", ""))
+            row.setdefault("url", row.pop("source_url", ""))
+            row.setdefault("detected_at", row.pop("published_at", None))
+        return rows
+    except Exception as e:
+        logger.error(f"get_trending_tools tier-3 failed: {e}", exc_info=True)
         return []
 
 

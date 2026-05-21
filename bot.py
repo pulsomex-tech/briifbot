@@ -507,7 +507,7 @@ async def cmd_latest(message: Message) -> None:
             disable_web_page_preview=True,
         )
     except Exception as e:
-        logger.error(f"cmd_latest({message.from_user.id}): {e}")
+        logger.error(f"cmd_latest({message.from_user.id}): {e}", exc_info=True)
         await message.answer("Something went wrong. Please try again.")
 
 
