@@ -190,17 +190,25 @@ async def upsert_user_profile(telegram_id: int, role: str, stack: str, categorie
     if not user:
         raise ValueError(f"User not found: {telegram_id}")
     stack_arr = [s.strip() for s in stack.split(",") if s.strip()] or [stack]
-    # Clear FSM state now that onboarding is complete; preserve field via upsert
-    result = await db.table("user_profiles").upsert(
-        {
-            "user_id": user["id"],
-            "work_type": role,
-            "tech_stack": stack_arr,
-            "categories": categories,
-            "raw_onboarding_response": None,
-        },
-        on_conflict="user_id",
-    ).execute()
+    final = {
+        "work_type": role,
+        "tech_stack": stack_arr,
+        "categories": categories,
+        "raw_onboarding_response": None,  # clear FSM state on completion
+    }
+    # Check if a row already exists (could be a stub created by SupabaseStorage)
+    existing = (
+        await db.table("user_profiles")
+        .select("id")
+        .eq("user_id", user["id"])
+        .maybe_single()
+        .execute()
+    )
+    row = existing.data if existing is not None else None
+    if row:
+        result = await db.table("user_profiles").update(final).eq("id", row["id"]).execute()
+    else:
+        result = await db.table("user_profiles").insert({"user_id": user["id"], **final}).execute()
     return result.data[0]
 
 

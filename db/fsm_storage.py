@@ -2,8 +2,8 @@
 Supabase-backed aiogram FSM storage.
 
 State + data are serialised as JSON into user_profiles.raw_onboarding_response.
-A stub user_profiles row is created (with nulls for not-yet-collected fields)
-the moment a new user hits /start so that state can be persisted immediately.
+Uses SELECT-then-INSERT/UPDATE (not upsert) to avoid relying on a UNIQUE
+constraint on user_id that may not exist in the live schema.
 
 StorageKey.user_id == Telegram user ID (private chats: chat_id == user_id).
 """
@@ -15,11 +15,8 @@ from aiogram.fsm.storage.base import BaseStorage, StorageKey
 
 logger = logging.getLogger(__name__)
 
-_EMPTY = json.dumps({"fsm_state": None, "fsm_data": {}})
-
 
 class SupabaseStorage(BaseStorage):
-    # ── internal helpers ──────────────────────────────────────────────────────
 
     async def _get_db(self):
         from db.client import get_client
@@ -30,11 +27,8 @@ class SupabaseStorage(BaseStorage):
         user = await get_user(telegram_id)
         return user["id"] if user else None
 
-    async def _load_raw(self, telegram_id: int) -> dict:
-        """Return the parsed JSON from raw_onboarding_response, or empty dict."""
-        uid = await self._get_user_uuid(telegram_id)
-        if not uid:
-            return {}
+    async def _get_profile_row(self, uid: str) -> Optional[dict]:
+        """Return the user_profiles row for this UUID, or None."""
         try:
             db = await self._get_db()
             result = (
@@ -44,13 +38,21 @@ class SupabaseStorage(BaseStorage):
                 .maybe_single()
                 .execute()
             )
-            row = result.data if result is not None else None
-            if not row:
-                return {}
-            raw = row.get("raw_onboarding_response") or "{}"
-            return json.loads(raw)
+            return result.data if result is not None else None
         except Exception as e:
-            logger.error(f"SupabaseStorage._load_raw({telegram_id}): {e}")
+            logger.error(f"SupabaseStorage._get_profile_row({uid}): {e}")
+            return None
+
+    async def _load_raw(self, telegram_id: int) -> dict:
+        uid = await self._get_user_uuid(telegram_id)
+        if not uid:
+            return {}
+        row = await self._get_profile_row(uid)
+        if not row:
+            return {}
+        try:
+            return json.loads(row.get("raw_onboarding_response") or "{}")
+        except Exception:
             return {}
 
     async def _save_raw(self, telegram_id: int, payload: dict) -> None:
@@ -60,36 +62,54 @@ class SupabaseStorage(BaseStorage):
         try:
             db = await self._get_db()
             serialised = json.dumps(payload)
-            # Upsert: creates row if missing (stub profile), updates if present
-            await db.table("user_profiles").upsert(
-                {"user_id": uid, "raw_onboarding_response": serialised},
-                on_conflict="user_id",
-            ).execute()
+            row = await self._get_profile_row(uid)
+
+            if row:
+                # Row exists — only touch raw_onboarding_response
+                await (
+                    db.table("user_profiles")
+                    .update({"raw_onboarding_response": serialised})
+                    .eq("id", row["id"])
+                    .execute()
+                )
+            else:
+                # No profile row yet — insert stub so state can be stored.
+                # Use "onboarding" as work_type placeholder to satisfy any
+                # NOT NULL constraint; cmd_start completion overwrites it.
+                await (
+                    db.table("user_profiles")
+                    .insert({
+                        "user_id": uid,
+                        "work_type": "onboarding",
+                        "tech_stack": [],
+                        "categories": [],
+                        "raw_onboarding_response": serialised,
+                    })
+                    .execute()
+                )
         except Exception as e:
             logger.error(f"SupabaseStorage._save_raw({telegram_id}): {e}")
 
     # ── BaseStorage interface ─────────────────────────────────────────────────
 
     async def set_state(self, key: StorageKey, state=None) -> None:
-        telegram_id = key.user_id
-        payload = await self._load_raw(telegram_id)
+        tid = key.user_id
+        payload = await self._load_raw(tid)
         payload["fsm_state"] = state.state if state else None
-        await self._save_raw(telegram_id, payload)
+        await self._save_raw(tid, payload)
 
     async def get_state(self, key: StorageKey) -> Optional[str]:
-        telegram_id = key.user_id
-        payload = await self._load_raw(telegram_id)
+        payload = await self._load_raw(key.user_id)
         return payload.get("fsm_state")
 
     async def set_data(self, key: StorageKey, data: Dict[str, Any]) -> None:
-        telegram_id = key.user_id
-        payload = await self._load_raw(telegram_id)
+        tid = key.user_id
+        payload = await self._load_raw(tid)
         payload["fsm_data"] = data
-        await self._save_raw(telegram_id, payload)
+        await self._save_raw(tid, payload)
 
     async def get_data(self, key: StorageKey) -> Dict[str, Any]:
-        telegram_id = key.user_id
-        payload = await self._load_raw(telegram_id)
+        payload = await self._load_raw(key.user_id)
         return payload.get("fsm_data") or {}
 
     async def close(self) -> None:

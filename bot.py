@@ -90,12 +90,38 @@ def _upgrade_kb() -> InlineKeyboardMarkup:
 
 # ── /start ────────────────────────────────────────────────────────────────────
 
+def _profile_complete(profile: dict | None) -> bool:
+    """True only when the profile has a real work_type (not the stub sentinel)."""
+    if not profile:
+        return False
+    wt = profile.get("work_type") or ""
+    return bool(wt and wt != "onboarding" and profile.get("categories"))
+
+
+async def _begin_onboarding(message: Message, state: FSMContext, is_new: bool) -> None:
+    await state.set_state(Onboarding.role)
+    if is_new:
+        text = (
+            "👋 Welcome to *Briifbot!*\n\n"
+            "I monitor AI & tech tool launches globally and send you personalized alerts "
+            "scored against your specific workflow.\n\n"
+            "🎁 *You're starting a 7-day free trial* — full access, no credit card needed.\n\n"
+            "Let's personalise your alerts in 3 quick steps.\n\n"
+            "*Step 1 of 3 — What's your role?*"
+        )
+    else:
+        text = (
+            "Let's complete your profile to personalise your alerts.\n\n"
+            "*Step 1 of 3 — What's your role?*"
+        )
+    await message.answer(text, parse_mode="Markdown", reply_markup=_role_kb())
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext) -> None:
     try:
         telegram_id = message.from_user.id
 
-        # Parse referral code from deep link: /start ref_XXXXXXXX
         ref_code: str | None = None
         parts = (message.text or "").split(maxsplit=1)
         if len(parts) > 1 and parts[1].startswith("ref_"):
@@ -104,42 +130,30 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
         user = await get_user(telegram_id)
 
         if user:
-            await state.clear()
             profile = await get_user_profile(telegram_id)
-            if profile:
+            if _profile_complete(profile):
+                # Fully onboarded — show welcome back, don't touch FSM
+                await state.clear()
                 status = user.get("status", "free").title()
                 await message.answer(
                     f"👋 Welcome back!\n\n*Status:* {status}\n\nUse /help to see all commands.",
                     parse_mode="Markdown",
                 )
             else:
-                # Existing user without profile → restart onboarding
-                await state.set_state(Onboarding.role)
-                await message.answer(
-                    "Let's finish your profile setup. What's your role?",
-                    reply_markup=_role_kb(),
-                )
+                # Profile missing or incomplete (stub row from SupabaseStorage
+                # has work_type='onboarding') — kick off onboarding flow
+                await _begin_onboarding(message, state, is_new=False)
             return
 
-        # New user
+        # Brand-new user
         await create_user(
             telegram_id=telegram_id,
             username=message.from_user.username,
             first_name=message.from_user.first_name,
             referred_by=ref_code,
         )
+        await _begin_onboarding(message, state, is_new=True)
 
-        await state.set_state(Onboarding.role)
-        await message.answer(
-            "👋 Welcome to *Briifbot!*\n\n"
-            "I monitor AI & tech tool launches globally and send you personalized alerts "
-            "scored against your specific workflow.\n\n"
-            "🎁 *You're starting a 7-day free trial* — full access, no credit card needed.\n\n"
-            "Let's personalise your alerts in 3 quick steps.\n\n"
-            "*Step 1 of 3 — What's your role?*",
-            parse_mode="Markdown",
-            reply_markup=_role_kb(),
-        )
     except Exception as e:
         logger.error(f"cmd_start({message.from_user.id}): {e}")
         await message.answer("Something went wrong. Please try /start again.")
@@ -440,12 +454,28 @@ async def cmd_stats(message: Message) -> None:
 
 # ── /help ─────────────────────────────────────────────────────────────────────
 
+@router.message(Command("setup"))
+async def cmd_setup(message: Message, state: FSMContext) -> None:
+    """Explicitly restart onboarding regardless of current state."""
+    try:
+        user = await get_user(message.from_user.id)
+        if not user:
+            await message.answer("Please send /start first to create your account.")
+            return
+        await state.clear()
+        await _begin_onboarding(message, state, is_new=False)
+    except Exception as e:
+        logger.error(f"cmd_setup({message.from_user.id}): {e}")
+        await message.answer("Something went wrong. Please try again.")
+
+
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await message.answer(
         "🤖 *Briifbot Help*\n\n"
         "*Commands:*\n"
-        "/start — Set up or restart onboarding\n"
+        "/start — Welcome back or trigger onboarding\n"
+        "/setup — Redo your profile setup from scratch\n"
         "/profile — View your current profile\n"
         "/upgrade — Subscribe for personalized alerts\n"
         "/pause — Pause all alerts\n"
