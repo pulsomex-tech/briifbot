@@ -55,7 +55,7 @@ async def _ingest_and_dispatch(bot: Bot) -> None:
         await filter_tools()
 
         # Dispatch priority alerts for tools ingested in the last 20 minutes
-        fresh_tools = await get_recent_confirmed_tools(hours=0)  # last 24h; filter by age below
+        fresh_tools = await get_recent_confirmed_tools(hours=24)  # filter to ingest window below
 
         # Only process tools published in the last ingest window
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=INGESTION_INTERVAL_MINUTES + 5)
