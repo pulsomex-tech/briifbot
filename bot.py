@@ -24,6 +24,7 @@ from config.settings import (
 )
 from db.client import (
     create_user,
+    get_trending_tools,
     get_user,
     get_user_profile,
     get_user_referral_count,
@@ -454,6 +455,62 @@ async def cmd_stats(message: Message) -> None:
 
 # ── /help ─────────────────────────────────────────────────────────────────────
 
+_RANK_EMOJIS = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣"]
+
+
+@router.message(Command("latest"))
+async def cmd_latest(message: Message) -> None:
+    try:
+        await message.answer("📡 Scanning the market... one sec.")
+        tools = await get_trending_tools(limit=7, days=7)
+
+        if not tools:
+            await message.answer(
+                "📭 Nothing major in the last 7 days worth surfacing yet.\n\n"
+                "Check back tomorrow — briifbot runs every 15 minutes."
+            )
+            return
+
+        lines = [
+            "<b>📡 Biggest drops from the market</b>",
+            "<i>Ranked by internet attention this week</i>",
+            "",
+        ]
+
+        for i, tool in enumerate(tools):
+            emoji = _RANK_EMOJIS[i] if i < len(_RANK_EMOJIS) else f"{i + 1}."
+            name  = tool.get("name", "Unknown")
+            raw_desc = tool.get("description") or ""
+            desc  = raw_desc[:140] + ("…" if len(raw_desc) > 140 else "")
+            url   = tool.get("url", "")
+            cats  = tool.get("categories") or []
+            tag_str = "  ".join(f"#{c.replace(' ', '')}" for c in cats[:2])
+
+            lines.append(f"{emoji} <b>{name}</b>")
+            if desc:
+                lines.append(desc)
+            if tag_str:
+                lines.append(f"<i>{tag_str}</i>")
+            if url:
+                lines.append(f"<a href='{url}'>→ Check it out</a>")
+            lines.append("")
+
+        lines += [
+            "─────────────────",
+            "💬 Want personalized alerts? Your profile is already active.",
+            "🔗 Invite someone: /refer",
+        ]
+
+        await message.answer(
+            "\n".join(lines),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        logger.error(f"cmd_latest({message.from_user.id}): {e}")
+        await message.answer("Something went wrong. Please try again.")
+
+
 @router.message(Command("setup"))
 async def cmd_setup(message: Message, state: FSMContext) -> None:
     """Explicitly restart onboarding regardless of current state."""
@@ -475,6 +532,7 @@ async def cmd_help(message: Message) -> None:
         "🤖 *Briifbot Help*\n\n"
         "*Commands:*\n"
         "/start — Welcome back or trigger onboarding\n"
+        "/latest — Top AI tool drops this week\n"
         "/setup — Redo your profile setup from scratch\n"
         "/profile — View your current profile\n"
         "/upgrade — Subscribe for personalized alerts\n"

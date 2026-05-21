@@ -350,6 +350,56 @@ async def mark_tool_processed(tool_id: str) -> None:
     await update_tool(tool_id, {"is_valid": False})
 
 
+async def update_tool_market_score(tool_id: str, score: int) -> None:
+    """Isolated update for market_score — silently no-ops if column doesn't exist yet."""
+    db = await get_client()
+    try:
+        await db.table("tools").update({"market_score": score}).eq("id", tool_id).execute()
+    except Exception as e:
+        if "market_score" in str(e):
+            pass  # Column not yet added via SQL migration — safe to ignore
+        else:
+            logger.error(f"update_tool_market_score({tool_id}): {e}")
+
+
+async def get_trending_tools(limit: int = 7, days: int = 7) -> list[dict]:
+    """Return top tools by market_score (or recency if column not yet migrated)."""
+    db = await get_client()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    try:
+        result = (
+            await db.table("tools")
+            .select("id,name,description,url,categories,tags,market_score,source,detected_at")
+            .eq("is_valid", True)
+            .gte("detected_at", cutoff)
+            .gt("market_score", 0)
+            .order("market_score", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        if result.data:
+            return result.data
+        # market_score column missing or all scores are 0 — fall through
+    except Exception:
+        pass  # Column not migrated yet
+
+    # Fallback: most recent valid tools regardless of market_score
+    try:
+        result = (
+            await db.table("tools")
+            .select("id,name,description,url,categories,tags,source,detected_at")
+            .eq("is_valid", True)
+            .gte("detected_at", cutoff)
+            .order("detected_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception as e:
+        logger.error(f"get_trending_tools fallback: {e}")
+        return []
+
+
 # ── Alerts ────────────────────────────────────────────────────────────────────
 
 async def create_alert(
