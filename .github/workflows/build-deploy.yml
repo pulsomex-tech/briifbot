@@ -1,11 +1,8 @@
-name: Build & Deploy
+name: Build and Deploy
 
 on:
   push:
     branches: [main]
-
-env:
-  IMAGE: ghcr.io/pulsomex-tech/briifbot
 
 jobs:
   build-and-deploy:
@@ -24,15 +21,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
-        uses: docker/build-push-action@v5
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/pulsomex-tech/briifbot:latest
-            ghcr.io/pulsomex-tech/briifbot:${{ github.sha }}
+          tags: ghcr.io/pulsomex-tech/briifbot:latest,ghcr.io/pulsomex-tech/briifbot:${{ github.sha }}
 
       - name: Trigger Render deploy
-        if: ${{ secrets.RENDER_DEPLOY_HOOK != '' }}
-        run: curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -n "$HOOK" ]; then
+            curl -fsSL -X POST "$HOOK"
+          fi
