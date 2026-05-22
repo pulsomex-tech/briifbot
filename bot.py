@@ -1,4 +1,6 @@
+import html
 import logging
+import re
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.exceptions import TelegramForbiddenError
@@ -481,6 +483,8 @@ async def cmd_latest(message: Message) -> None:
             emoji = _RANK_EMOJIS[i] if i < len(_RANK_EMOJIS) else f"{i + 1}."
             name  = tool.get("name", "Unknown")
             raw_desc = tool.get("description") or ""
+            raw_desc = re.sub(r"<[^>]+>", " ", raw_desc)   # strip HTML tags
+            raw_desc = html.unescape(re.sub(r"\s+", " ", raw_desc).strip())
             desc  = raw_desc[:140] + ("…" if len(raw_desc) > 140 else "")
             url   = tool.get("url", "")
             cats  = tool.get("categories") or []
