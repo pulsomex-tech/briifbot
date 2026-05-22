@@ -32,7 +32,14 @@ async def main() -> None:
     await site.start()
     logger.info(f"Webhook server listening on port {WEBHOOK_PORT}")
 
-    logger.info("Bot polling started")
+    # Clear any registered Telegram webhook so getUpdates polling works.
+    # aiogram's start_polling does NOT do this automatically.
+    webhook_info = await bot.get_webhook_info()
+    if webhook_info.url:
+        logger.warning(f"Active webhook found ({webhook_info.url!r}) — deleting before polling starts")
+        await bot.delete_webhook(drop_pending_updates=False)
+    logger.info("Starting polling")
+
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
@@ -43,4 +50,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception:
+        logger.critical("Fatal startup error", exc_info=True)
+        sys.exit(1)
