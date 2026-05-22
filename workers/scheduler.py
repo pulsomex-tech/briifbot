@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timezone, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -39,6 +40,15 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         args=[bot],
         id="trial_downgrade",
         max_instances=1,
+    )
+
+    scheduler.add_job(
+        _keepalive,
+        IntervalTrigger(minutes=5),
+        id="keepalive",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=30,
     )
 
     return scheduler
@@ -131,3 +141,20 @@ async def _downgrade_expired_trials(bot: Bot) -> None:
 
     except Exception as e:
         logger.error(f"_downgrade_expired_trials error: {e}")
+
+
+async def _keepalive() -> None:
+    """Ping our own public URL every 5 min so Render's proxy sees traffic and doesn't spin us down."""
+    url = os.environ.get("RENDER_EXTERNAL_URL", "")
+    if not url:
+        return
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{url}/health",
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                logger.debug(f"_keepalive: {resp.status}")
+    except Exception as e:
+        logger.debug(f"_keepalive error: {e}")
