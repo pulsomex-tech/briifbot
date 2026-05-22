@@ -22,20 +22,60 @@ AI_KEYWORDS = {
 _TIMEOUT = aiohttp.ClientTimeout(total=30)
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; Briifbot/1.0; +https://t.me/getbriifbot)"}
 
+_HN_STRIP_PREFIXES = ("Article URL:", "Comments URL:", "Points:", "# Comments:")
+
+
+def _parse_hn_entry(summary_html: str, title: str) -> tuple[str, str]:
+    """
+    Parse an hnrss.org summary.
+    Returns (clean_description, article_url).
+    hnrss summaries embed metadata lines like:
+      <p>Article URL: https://…</p>
+      <p>Comments URL: https://…</p>
+      <p>Points: 42</p>
+      <p># Comments: 7</p>
+    We extract the article URL and drop all metadata lines.
+    Falls back to title if no text remains.
+    """
+    soup = BeautifulSoup(summary_html, "lxml")
+    article_url = ""
+    clean_parts = []
+    for p in soup.find_all("p"):
+        text = p.get_text(strip=True)
+        if text.startswith("Article URL:"):
+            a_tag = p.find("a")
+            article_url = (a_tag.get("href", "") if a_tag else text[len("Article URL:"):]).strip()
+        elif not any(text.startswith(prefix) for prefix in _HN_STRIP_PREFIXES):
+            if text:
+                clean_parts.append(text)
+    description = " ".join(clean_parts).strip() or title
+    return description, article_url
+
 
 async def _fetch_rss(session: aiohttp.ClientSession, feed: dict) -> list[dict]:
+    is_hn = "hnrss.org" in feed["url"]
     items: list[dict] = []
     try:
         async with session.get(feed["url"], timeout=_TIMEOUT, headers=_HEADERS) as resp:
             content = await resp.text()
         parsed = feedparser.parse(content)
         for entry in parsed.entries[:25]:
-            url = entry.get("link", "").strip()
+            title = entry.get("title", "").strip()
+            summary = entry.get("summary", "") or ""
+            hn_comments_url = entry.get("link", "").strip()
+
+            if is_hn:
+                description, article_url = _parse_hn_entry(summary, title)
+                url = article_url or hn_comments_url
+            else:
+                description = summary
+                url = hn_comments_url
+
             if not url:
                 continue
             items.append({
-                "name": entry.get("title", "").strip(),
-                "description": (entry.get("summary", "") or "")[:600],
+                "name": title,
+                "description": description[:600],
                 "url": url,
                 "source": feed["name"],
                 "categories": [],
